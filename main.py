@@ -16,8 +16,21 @@ def is_ipv4_address(ip):
     except socket.error:
         return False
 
+# 使用方法
+print('使用方法：'
+      '第一步：电脑在 设置 -> 网络和Internet -> 移动热点 中打开移动热点，让Switch连接\n'
+      '第二步：在下方的 已连接的设备 记下Switch的IP地址（如192.168.137.28）\n'
+      '第三步：点击 相关设置 中的 更改适配器选项 ,找到带有 Microsoft Wi-Fi Direct Virtual Adapter #2 的一项，\n'
+      '记下它的连接名称（如本地连接* 10）')
+
 # 设置数据包源ip
-src_ip = '192.168.137.28'
+src_ip = input('第四步：在这里输入你在第二步中记下的IP地址：\n')
+if not is_ipv4_address(src_ip):
+    src_ip = input('这不是有效的IP地址，请重新输入：\n')
+
+# 设置目标适配器
+interface = input('第五步：在这里输入你在第三步中记下的连接名称：\n')
+
 
 # 获取本地ip
 local_ips = []
@@ -29,7 +42,7 @@ for i in local_ip:
 result = " or dst host ".join(local_ips)
 
 # 创建一个抓包对象来从interface指定的网络抓包
-capture = pyshark.LiveCapture(interface='本地连接* 10',
+capture = pyshark.LiveCapture(interface=f'{interface}',
                               bpf_filter=f'udp and src host {src_ip} and not (dst host {result})')
 
 # 创建一个DataFrame来存储目标ip地址和归属地
@@ -154,7 +167,7 @@ def process_packet(packet):
         comp_current_time = datetime.now().strftime('%Y年%m月%d日 - %H:%M:%S')
         comp_ip2 = comp_ip
         comp_location = get_ip_location(comp_ip)
-        print(f'遇到对手 \033[32m{comp_ip}\033[0m')
+        print(f'遇到来自 \033[34m{comp_location}\033[0m 的对手 \033[32m{comp_ip}\033[0m')
         comp_ips.append([comp_current_time, comp_ip, comp_location])
 
 
