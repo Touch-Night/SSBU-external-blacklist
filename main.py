@@ -7,6 +7,7 @@ import requests
 import json
 import socket
 from datetime import datetime
+from ping3 import ping
 
 
 # 检测字符串是否是ipv4地址
@@ -33,6 +34,58 @@ def get_ip_location(ip):
             return location
         else:
             return "错误：无法解析归属地"
+
+
+# ping
+def ping_cache(ip):
+    global ip_ping_cache
+    if ip in ip_ping_cache:
+        threading.Thread(target=ping_host, args=(ip, 4)).start()
+        return ip_ping_cache[ip]
+    else:
+        return ping_host(ip, 0.5)
+
+
+def ping_host(ip, timeoutsecond):
+    global ip_ping_cache
+    result = ping(ip, timeout=timeoutsecond)
+    if result is None:
+        ip_ping_cache[ip] = "\033[31m超时\033[0m"
+    else:
+        result_ms = int(ping(ip) * 1000)
+        if result_ms < 100:
+            colored_result_ms = f'\033[32m{result_ms} ms\033[0m'
+        elif result_ms < 250:
+            colored_result_ms = f'\033[33m{result_ms} ms\033[0m'
+        else:
+            colored_result_ms = f'\033[31m{result_ms} ms\033[0m'
+        ip_ping_cache[ip] = colored_result_ms
+
+
+# 丢包率
+def packet_loss_cache(ip):
+    global ip_packet_loss_cache
+    if ip in ip_packet_loss_cache:
+        threading.Thread(target=get_packet_loss, args=(ip, 120, 1)).start()
+        return ip_packet_loss_cache[ip]
+    else:
+        return get_packet_loss(ip, 20, 0.4)
+
+
+def get_packet_loss(ip, count, timeout):
+    lost_packets = 0
+    for i in range(count):
+        result = ping(ip, timeout=timeout)
+        if result is None:
+            lost_packets += 1
+    packet_loss = round((lost_packets / count) * 100, 1)
+    if packet_loss < 5:
+        packet_loss_result = f'\033[32m{packet_loss}%\033[0m'
+    elif packet_loss < 15:
+        packet_loss_result = f'\033[33m{packet_loss}%\033[0m'
+    else:
+        packet_loss_result = f'\033[31m{packet_loss}%\033[0m'
+    ip_packet_loss_cache[ip] = packet_loss_result
 
 
 # 把DataFrame保存为csv文件
@@ -115,7 +168,8 @@ def process_packet(packet):
 
         dest_ip2 = dest_ip
         location = get_ip_location(dest_ip)
-        print(f'{current_time} \033[32m{dest_ip}\033[0m \033[34m{location}\033[0m')
+        print(
+            f'{current_time} \033[32m{dest_ip}\033[0m \033[34m{location}\033[0m {ping_cache(dest_ip)} 丢包率:{packet_loss_cache(dest_ip)}')
         dest_ips.append([current_time, dest_ip, location])
 
     # 记录对手ip
@@ -123,12 +177,13 @@ def process_packet(packet):
         comp_current_time = datetime.now().strftime('%Y年%m月%d日 - %H:%M:%S')
         comp_ip2 = comp_ip
         comp_location = get_ip_location(comp_ip)
-        print(f'遇到来自 \033[34m{comp_location}\033[0m 的对手 \033[32m{comp_ip}\033[0m')
+        print(
+            f'遇到来自 \033[34m{comp_location}\033[0m ，延迟为 {ping_cache(comp_ip)} 的对手 \033[32m{comp_ip}\033[0m 丢包率：{packet_loss_cache(comp_ip)}')
         comp_ips.append([comp_current_time, comp_ip, comp_location])
 
 
 def main():
-    global continue_capture, blacklist, comp_ips, dest_ips, dest_ip2, comp_ip, comp_ip2, comp_ip3, ip_location_cache
+    global continue_capture, blacklist, comp_ips, dest_ips, dest_ip2, comp_ip, comp_ip2, comp_ip3, ip_location_cache, ip_ping_cache, ip_packet_loss_cache
     dest_ips = [['时间', 'IP', '归属地']]
 
     # 从文件加载黑名单，没有文件时创建黑名单
@@ -173,6 +228,10 @@ def main():
     result = " or dst host ".join(local_ips)
 
     ip_location_cache = {}
+
+    ip_ping_cache = {}
+
+    ip_packet_loss_cache = {}
 
     dest_ip2, comp_ip, comp_ip2, comp_ip3 = None, None, None, None
 
