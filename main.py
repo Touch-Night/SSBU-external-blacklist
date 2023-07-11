@@ -1,3 +1,4 @@
+import time
 import pyshark
 import csv
 import threading
@@ -47,7 +48,13 @@ def save(dest_ips, blacklist, comp_ips):
     with open('一起玩的人.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerows(comp_ips)
-    print('已保存所有列表')
+
+
+def auto_save():
+    global continue_capture, dest_ips, blacklist, comp_ips
+    while continue_capture:
+        save(dest_ips, blacklist, comp_ips)
+        time.sleep(10)
 
 
 # 监听用户输入
@@ -70,13 +77,17 @@ def check_user_input():
                     print('暂未捕获到任何对手IP')
             elif key == b's':  # 按S保存列表
                 save(dest_ips, blacklist, comp_ips)
+                print('已保存所有列表')
+
 
 # 刷新抓包
 def new_cap(interface, src_ip, result):
+    global continue_capture
     cap = pyshark.LiveCapture(interface=f'{interface}',
-                                bpf_filter=f'udp and src host {src_ip} and not (dst host {result})')
-    while True:
+                              bpf_filter=f'udp and src host {src_ip} and not (dst host {result})')
+    while continue_capture:
         cap.apply_on_packets(process_packet, packet_count=10)
+
 
 # 抓包处理函数
 def process_packet(packet):
@@ -169,6 +180,8 @@ def main():
 
     # 开始监听用户输入
     threading.Thread(target=check_user_input).start()
+
+    threading.Thread(target=auto_save).start()
 
     new_cap(interface, src_ip, result)
 
