@@ -9,6 +9,9 @@ import socket
 from datetime import datetime
 from ping3 import ping
 
+global ip_location_cache, ip_ping_cache, ip_packet_loss_cache, continue_capture, dest_ips, \
+    comp_ips, blacklist, dest_ip2, comp_ip, comp_ip2, comp_ip3, dest_ip
+
 
 # 检测字符串是否是ipv4地址
 def is_ipv4_address(ip):
@@ -21,24 +24,25 @@ def is_ipv4_address(ip):
 
 # 调用api获取归属地
 def get_ip_location(ip):
-    global ip_location_cache
     if ip in ip_location_cache:
         return ip_location_cache[ip]
     else:
         url = f"https://api.vore.top/api/IPdata?ip={ip}"
         response = requests.get(url)
-        data = json.loads(response.text)
-        if data["code"] == 200:
-            location = data["adcode"]["o"]
-            ip_location_cache[ip] = location
-            return location
-        else:
-            return "错误：无法解析归属地"
+        try:
+            data = json.loads(response.text)
+            if data["code"] == 200:
+                location = data["adcode"]["o"]
+                ip_location_cache[ip] = location
+                return location
+            else:
+                return "错误：无法解析归属地"
+        except json.decoder.JSONDecodeError:
+            return "错误：无法解析响应"
 
 
 # ping
 def ping_cache(ip):
-    global ip_ping_cache
     if ip in ip_ping_cache:
         threading.Thread(target=ping_host, args=(ip, 4)).start()
         return ip_ping_cache[ip]
@@ -47,7 +51,6 @@ def ping_cache(ip):
 
 
 def ping_host(ip, timeoutsecond):
-    global ip_ping_cache
     result = ping(ip, timeout=timeoutsecond)
     if result is None:
         ip_ping_cache[ip] = " 超时"
@@ -58,12 +61,11 @@ def ping_host(ip, timeoutsecond):
 
 # 丢包率
 def packet_loss_cache(ip):
-    global ip_packet_loss_cache
     if ip in ip_packet_loss_cache:
-        threading.Thread(target=get_packet_loss, args=(ip, 120, 1)).start()
+        threading.Thread(target=get_packet_loss, args=(ip, 50, 0.3)).start()
         return ip_packet_loss_cache[ip]
     else:
-        return get_packet_loss(ip, 20, 0.4)
+        return get_packet_loss(ip, 5, 0.3)
 
 
 def get_packet_loss(ip, count, timeout):
@@ -78,22 +80,21 @@ def get_packet_loss(ip, count, timeout):
 
 
 # 把DataFrame保存为csv文件
-def save(dest_ips, blacklist, comp_ips):
+def save(destination_ips, black_list, competitor_ips):
     with open('latest_log.csv', 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerows(dest_ips)
+        writer.writerows(destination_ips)
 
     with open('黑名单.csv', 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerows(blacklist)
+        writer.writerows(black_list)
 
     with open('一起玩的人.csv', 'w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerows(comp_ips)
+        writer.writerows(competitor_ips)
 
 
 def auto_save():
-    global continue_capture, dest_ips, blacklist, comp_ips
     while continue_capture:
         save(dest_ips, blacklist, comp_ips)
         time.sleep(10)
@@ -101,8 +102,8 @@ def auto_save():
 
 # 监听用户输入
 def check_user_input():
-    global continue_capture, blacklist, comp_ips, dest_ips, dest_ip2, comp_ip, comp_ip2, comp_ip3, ip_location_cache
 
+    global continue_capture
     while continue_capture:
         if msvcrt.kbhit():
             key = msvcrt.getch()
@@ -124,7 +125,6 @@ def check_user_input():
 
 # 刷新抓包
 def new_cap(interface, src_ip, result):
-    global continue_capture
     cap = pyshark.LiveCapture(interface=f'{interface}',
                               bpf_filter=f'udp and src host {src_ip} and not (dst host {result})')
     while continue_capture:
@@ -133,13 +133,13 @@ def new_cap(interface, src_ip, result):
 
 # 抓包处理函数
 def process_packet(packet):
-    global continue_capture, comp_ip, comp_ip2, comp_ip3, comp_ips, dest_ip, dest_ip2, dest_ips
+    global comp_ip, comp_ip2, comp_ip3, dest_ip2
     # 检查是否继续抓包
     if not continue_capture:
         return False  # 停止抓包
 
     # 从包中获取目标ip地址
-    dest_ip = packet.ip.dst
+    destination_ip = packet.ip.dst
     # 过滤亚马逊服务器的地址
     if "亚马逊" not in get_ip_location(packet.ip.dst):
         comp_ip = packet.ip.dst
@@ -152,14 +152,14 @@ def process_packet(packet):
                 f'来自 【{get_ip_location(comp_ip)}】 的 【{comp_ip}】 在黑名单中，尽快手动拔线！')
 
     # 如果前后两个ip不一致，展示当前时间、目标ip和归属地
-    if dest_ip != dest_ip2:
+    if destination_ip != dest_ip2:
         current_time = datetime.now().strftime('%Y年%m月%d日 - %H:%M:%S')
 
-        dest_ip2 = dest_ip
-        location = get_ip_location(dest_ip)
+        dest_ip2 = destination_ip
+        location = get_ip_location(destination_ip)
         print(
-            f'【{current_time}】 【{dest_ip}】 【{location}】 【{ping_cache(dest_ip)}】 丢包率:【{packet_loss_cache(dest_ip)}】')
-        dest_ips.append([current_time, dest_ip, location])
+            f'【{current_time}】 【{destination_ip}】 【{location}】 【{ping_cache(destination_ip)}】 丢包率:【{packet_loss_cache(destination_ip)}】')
+        dest_ips.append([current_time, destination_ip, location])
 
     # 记录对手ip
     if comp_ip != comp_ip2:
